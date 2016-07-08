@@ -30,6 +30,8 @@ namespace FootnoteCrop.WPF
 
         private ImageSource _leftPageImageSource;
 
+        private string _fileType;
+
         private double _overlayHeight;
 
         private double _overlayLeft;
@@ -64,10 +66,10 @@ namespace FootnoteCrop.WPF
 
                 ActiveBookIndex = new ObservableCollection<string>();
                 BasePath = ConfigAccessor.ApplicationSettings("BasePath");
-                var fileType = ConfigAccessor.ApplicationSettings("fileType");
-                if (string.IsNullOrEmpty(fileType))
+                _fileType = ConfigAccessor.ApplicationSettings("fileType");
+                if (string.IsNullOrEmpty(_fileType))
                 {
-                    fileType = "jpg";
+                    _fileType = "jpg";
                 }
                 CoordinatePath = Path.Combine(BasePath, "CoordinateData");
                 SourcePath = Path.Combine(BasePath, "VerticalCropped");
@@ -87,7 +89,7 @@ namespace FootnoteCrop.WPF
                 if (ActiveBookIndex.Count == 0)
                 {
                     foreach (var number in new DirectoryInfo(SourcePath)
-                        .GetFiles($"*.{fileType}")
+                        .GetFiles($"*.{_fileType}")
                         .Where(p => p.Name.StartsWith("_"))
                         .Select(p => Parser.ParseInt32(p.Name.Substring(1, p.Name.Length - 5)))
                         .OrderBy(p => p)
@@ -97,7 +99,7 @@ namespace FootnoteCrop.WPF
                         ActiveBookIndex.Add("_" + number);
                     }
                     foreach (var number in new DirectoryInfo(SourcePath)
-                        .GetFiles($"*.{fileType}")
+                        .GetFiles($"*.{_fileType}")
                         .Where(p => !p.Name.StartsWith("_"))
                         .Select(p => Parser.ParseInt32(p.Name.Substring(0, p.Name.Length - 4)))
                         .OrderBy(p => p)
@@ -435,7 +437,7 @@ namespace FootnoteCrop.WPF
                 if (index != null)
                 {
                     var indexInt32 = (int)index;
-                    var filename = Path.Combine(SourcePath, ActiveBookIndex[indexInt32] + ".png");
+                    var filename = Path.Combine(SourcePath, ActiveBookIndex[indexInt32] + "." + _fileType);
                     if (File.Exists(filename))
                     {
                         setter(new BitmapImage(new Uri(filename, UriKind.Relative)));

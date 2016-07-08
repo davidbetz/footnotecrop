@@ -1,0 +1,142 @@
+﻿<Window x:Class="FootnoteCrop.WPF.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:converter="clr-namespace:FootnoteCrop.WPF.Converter"
+        Title="Footnote Crop"
+        Width="800"
+        WindowState="Maximized"
+        Height="600">
+    <Window.Resources>
+        <converter:PageNumberValueConverter x:Key="pageNumberValueConverter" />
+        <converter:BorderColorConverter x:Key="borderColorConverter" />
+        <converter:ImageConverter x:Key="imageConverter" />
+        <converter:VisibilityConverter x:Key="visibilityConverter" />
+    </Window.Resources>
+    <DockPanel>
+        <Grid>
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="20" />
+                    <RowDefinition Height="10*" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="20" />
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding LeftPage}" HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding Page}" HorizontalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding RightPage}" HorizontalAlignment="Center" />
+                </Grid>
+                <Border Grid.Row="1" Name="Border" BorderBrush="Black" BorderThickness="1">
+                    <DockPanel>
+                        <Border BorderBrush="Transparent" BorderThickness="1">
+                            <Grid Name="RenderArea">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" BorderBrush="Transparent" BorderThickness="1">
+                                    <Canvas>
+                                        <Canvas.Background>
+                                            <ImageBrush Stretch="UniformToFill"
+                                                        ImageSource="{Binding LeftPageImageSource}" />
+                                        </Canvas.Background>
+                                    </Canvas>
+                                </Border>
+                                <Border Grid.Column="1" BorderThickness="2" BorderBrush="Black">
+                                    <Canvas Name="ActiveCanvas">
+                                        <Canvas.Background>
+                                            <ImageBrush Stretch="UniformToFill" ImageSource="{Binding ActivePageImageSource}" />
+                                        </Canvas.Background>
+                                        <!--<Image Source="{Binding ActivePage, Converter={StaticResource imageConverter}}" />-->
+                                        <Rectangle Fill="Red"
+                                                   Width="{Binding OverlayWidth}"
+                                                   Height="2"
+                                                   Canvas.Top="{Binding OverlayTop}"
+                                                   Canvas.Left="0" />
+                                        <Rectangle Fill="Green"
+                                                   Visibility="{Binding IsSaved, Converter={StaticResource visibilityConverter}}"
+                                                   Width="{Binding SavedOverlayWidth}"
+                                                   Height="2"
+                                                   Canvas.Top="{Binding SavedOverlayTop}"
+                                                   Canvas.Left="0" />
+                                        <TextBlock Text="{Binding ActiveText}" Visibility="Hidden" />
+                                    </Canvas>
+                                </Border>
+                                <Border Grid.Column="2" BorderBrush="Transparent" BorderThickness="1">
+                                    <Canvas>
+                                        <Canvas.Background>
+                                            <ImageBrush Stretch="UniformToFill" ImageSource="{Binding RightPageImageSource}" />
+                                        </Canvas.Background>
+                                    </Canvas>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DockPanel>
+                </Border>
+                <Border Grid.Row="2" BorderBrush="Black" BorderThickness="1">
+                    <ListView
+                        Name="PageListBox"
+                        VerticalAlignment="Stretch"
+                        HorizontalAlignment="Stretch"
+                        Height="{Binding Path=Height, RelativeSource={RelativeSource AncestorType={x:Type Border}}}"
+                        ItemsSource="{Binding ActiveBookIndex}"
+                        IsHitTestVisible="{Binding IsClean}">
+                        <ListView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ListView.ItemsPanel>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="Black" BorderThickness="1" Height="20" Width="30" CornerRadius="3">
+                                    <Border.Background>
+                                        <LinearGradientBrush>
+                                            <GradientStop Color="LightBlue" Offset="0" />
+                                            <GradientStop Color="White" Offset="1" />
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <TextBlock Text="{Binding}" FontWeight="Bold" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Border>
+                <StatusBar Grid.Row="3">
+                    <StatusBar.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                            </Grid>
+                        </ItemsPanelTemplate>
+                    </StatusBar.ItemsPanel>
+                    <StatusBar.Items>
+                        <StatusBarItem>
+                            <TextBlock Text="{Binding Page}" />
+                        </StatusBarItem>
+                        <Separator Grid.Column="1" />
+                        <StatusBarItem Grid.Column="2">
+                            <TextBlock Text="{Binding ActiveText}" />
+                        </StatusBarItem>
+                        <Separator Grid.Column="3" />
+                        <StatusBarItem Grid.Column="4">
+                            <TextBlock Text="{Binding SourcePath}" />
+                        </StatusBarItem>
+                    </StatusBar.Items>
+                </StatusBar>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

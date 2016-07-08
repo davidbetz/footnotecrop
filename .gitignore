@@ -3,3 +3,5 @@
 ################################################################################
 
 *.suo
+/FootnoteCrop.WPF/bin/Debug
+/FootnoteCrop.WPF/obj/x86/Debug

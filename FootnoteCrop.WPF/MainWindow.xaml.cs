@@ -389,6 +389,28 @@ namespace FootnoteCrop.WPF
             IsSaved = false;
 
             LoadPage(page);
+            ShowSavedCoordinate(page);
+        }
+
+        // Shows a coordinate file that already exists for the page (for example one proposed by
+        // autocut) as the green "saved" line, so it can be accepted by moving on or replaced by clicking.
+        private void ShowSavedCoordinate(string page)
+        {
+            var bitmapImage = ActivePageImageSource as BitmapImage;
+            var file = Path.Combine(CoordinatePath, page + ".txt");
+            if (bitmapImage == null || !File.Exists(file) || ActiveCanvas.RenderSize.Height <= 0)
+            {
+                return;
+            }
+            double pixelY;
+            if (!double.TryParse(File.ReadAllText(file).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out pixelY))
+            {
+                return;
+            }
+            // inverse of the calculation in Save()
+            SavedOverlayTop = pixelY * ActiveCanvas.RenderSize.Height / bitmapImage.PixelHeight;
+            SavedOverlayWidth = ActiveCanvas.ActualWidth;
+            IsSaved = true;
         }
 
         private void LoadPage(string page)

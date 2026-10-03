@@ -5,3 +5,6 @@
 *.suo
 /FootnoteCrop.WPF/bin/Debug
 /FootnoteCrop.WPF/obj/x86/Debug
+
+# Python
+__pycache__/

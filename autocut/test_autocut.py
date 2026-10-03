@@ -31,6 +31,15 @@ def make_page(name, body_lines, note_lines, quote_lines=0, header=True, note_wid
     return ac.Page(name, W, H, lines), first_note_top
 
 
+def page_to_tsv(page):
+    """Tesseract-style TSV with one word per line, spanning the whole line."""
+    rows = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+            f"1\t1\t0\t0\t0\t0\t0\t0\t{page.width:.0f}\t{page.height:.0f}\t-1\t"]
+    for i, l in enumerate(page.lines):
+        rows.append(f"5\t1\t1\t1\t{i + 1}\t1\t{l.left:.0f}\t{l.top:.0f}\t{l.width:.0f}\t{l.size:.0f}\t95\tword")
+    return "\n".join(rows)
+
+
 def book(n=30):
     return [make_page(str(i), 20, 3 + i % 4)[0] for i in range(1, n + 1)]
 
@@ -145,6 +154,31 @@ class ParseTests(unittest.TestCase):
         first = page.lines[0]
         self.assertEqual((first.left, first.right, first.top, first.bottom), (100, 290, 300, 326))
 
+    def test_line_size_is_the_line_span_not_the_word_heights(self):
+        # Real OCR: a line of short words has short word boxes, yet the line is full size.
+        # Words: some with ascenders only, some with descenders only, some x-height only.
+        rows = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+                "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t"]
+        spans = [(300, 316), (296, 316), (300, 321), (296, 321), (300, 313)]  # (top, bottom)
+        for i, (top, bottom) in enumerate(spans):
+            rows.append(f"5\t1\t1\t1\t1\t{i + 1}\t{100 + i * 90}\t{top}\t80\t{bottom - top}\t95\tw")
+        # a second line made only of x-height words
+        for i in range(4):
+            rows.append(f"5\t1\t1\t1\t2\t{i + 1}\t{100 + i * 90}\t340\t80\t12\t95\tw")
+        page = ac.parse_tesseract_tsv("\n".join(rows), "1")
+        full, x_only = page.lines
+        self.assertEqual(full.size, 25)  # 296 .. 321
+
+    def test_outlier_tall_word_does_not_inflate_the_size(self):
+        rows = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+                "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t"]
+        for i in range(5):
+            rows.append(f"5\t1\t1\t1\t1\t{i + 1}\t{100 + i * 90}\t300\t80\t18\t95\tw")
+        rows.append("5\t1\t1\t1\t1\t6\t600\t280\t30\t60\t95\tx")  # merged-in tall blob
+        (line,) = ac.parse_tesseract_tsv("\n".join(rows), "1").lines
+        self.assertEqual(line.size, 18)
+        self.assertEqual(line.top, 280)  # geometry still covers the blob
+
     def test_pdf_bbox_is_scaled_to_pixels(self):
         html = (
             '<page width="500.0" height="800.0">'
@@ -181,18 +215,16 @@ class FileTests(unittest.TestCase):
             keep = os.path.join(base, "CoordinateData", "1.txt")
             with open(keep, "w") as fh:
                 fh.write("123")
-            # exercise only the file-writing path through main() using cached OCR data
-            import json
+            # feed main() cached OCR output (the cache is only trusted when newer than the image)
             os.mkdir(os.path.join(base, "AutoCutData"))
             for p in pages:
-                open(os.path.join(base, "Straight", p.name + ".png"), "w").close()
-                with open(os.path.join(base, "AutoCutData", p.name + ".json"), "w") as fh:
-                    json.dump({"w": p.width, "h": p.height,
-                               "lines": [[l.top, l.bottom, l.left, l.right, l.size] for l in p.lines]}, fh)
-            # the cache is only trusted when it is newer than the image
-            future = os.path.getmtime(os.path.join(base, "Straight", "1.png")) + 10
-            for p in pages:
-                os.utime(os.path.join(base, "AutoCutData", p.name + ".json"), (future, future))
+                image = os.path.join(base, "Straight", p.name + ".png")
+                open(image, "w").close()
+                cache = os.path.join(base, "AutoCutData", p.name + ".tsv")
+                with open(cache, "w") as fh:
+                    fh.write(page_to_tsv(p))
+                future = os.path.getmtime(image) + 10
+                os.utime(cache, (future, future))
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(ac.main([base]), 0)
             with open(keep) as fh:

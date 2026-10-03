@@ -243,29 +243,31 @@ def parse_tesseract_tsv(tsv, name):
 
     lines = []
     for ws in words.values():
-        heights = sorted(w[4] for w in ws)
-        # ~75th percentile of word heights approximates an ascender-to-descender height
-        size = heights[min(len(heights) - 1, int(len(heights) * 0.75))]
+        # Size = ascender-to-descender span of the line. Word heights alone are far too
+        # noisy (a line of short words has no tall letters), but the span is stable. Words much
+        # taller than typical (merged lines, odd marks) are left out of the size only.
+        typical = statistics.median(w[4] for w in ws)
+        kept = [w for w in ws if w[4] <= 1.5 * typical]
         lines.append(
             Line(
                 top=min(w[1] for w in ws),
                 bottom=max(w[3] for w in ws),
                 left=min(w[0] for w in ws),
                 right=max(w[2] for w in ws),
-                size=size,
+                size=max(w[3] for w in kept) - min(w[1] for w in kept),
             )
         )
     return Page(name, width, height, lines)
 
 
 def ocr_image(args):
-    path, name, lang = args
+    """Run Tesseract on one image and return its raw TSV output."""
+    path, lang = args
     env = dict(os.environ, OMP_THREAD_LIMIT="1")
-    out = subprocess.run(
+    return subprocess.run(
         ["tesseract", path, "stdout", "-l", lang, "--psm", "3", "tsv"],
         capture_output=True, text=True, env=env, check=True,
     ).stdout
-    return parse_tesseract_tsv(out, name)
 
 
 def parse_pdf_bbox(html, scale, names):
@@ -334,29 +336,25 @@ def _render_one(args):
 
 
 def load_pages_from_images(files, lang, jobs, cache_dir, use_cache):
-    pages = [None] * len(files)
+    """OCR every page (raw Tesseract output is cached next to the book) and parse the lines."""
+    tsvs = [None] * len(files)
     todo = []
     for i, (stem, path) in enumerate(files):
-        cached = os.path.join(cache_dir, stem + ".json")
+        cached = os.path.join(cache_dir, stem + ".tsv")
         if use_cache and os.path.exists(cached) and os.path.getmtime(cached) >= os.path.getmtime(path):
-            with open(cached) as fh:
-                d = json.load(fh)
-            pages[i] = Page(stem, d["w"], d["h"], [Line(*l) for l in d["lines"]])
+            with open(cached, encoding="utf-8") as fh:
+                tsvs[i] = fh.read()
         else:
-            todo.append((i, (path, stem, lang)))
+            todo.append(i)
     if todo:
         print(f"OCR: {len(todo)} page(s) with {jobs} worker(s)...", file=sys.stderr)
         os.makedirs(cache_dir, exist_ok=True)
         with ProcessPoolExecutor(max_workers=jobs) as pool:
-            for (i, _), page in zip(todo, pool.map(ocr_image, [t[1] for t in todo], chunksize=4)):
-                pages[i] = page
-                with open(os.path.join(cache_dir, page.name + ".json"), "w") as fh:
-                    json.dump(
-                        {"w": page.width, "h": page.height,
-                         "lines": [[l.top, l.bottom, l.left, l.right, l.size] for l in page.lines]},
-                        fh,
-                    )
-    return pages
+            for i, tsv in zip(todo, pool.map(ocr_image, [(files[i][1], lang) for i in todo], chunksize=4)):
+                tsvs[i] = tsv
+                with open(os.path.join(cache_dir, files[i][0] + ".tsv"), "w", encoding="utf-8") as fh:
+                    fh.write(tsv)
+    return [parse_tesseract_tsv(tsv, stem) for tsv, (stem, _) in zip(tsvs, files)]
 
 
 def main(argv=None):

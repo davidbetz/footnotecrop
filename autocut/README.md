@@ -57,25 +57,26 @@ before cropping:
 * all the text on the page is small (index, bibliography, tables, notes-only pages),
 * text below the cut is narrow like a list or table, not footnote paragraphs,
 * the first block under the cut is indented like a block quote,
-* the page's body size differs from the rest of the book, or sizes are mixed around the cut.
+* the page's body size differs from the rest of the book, or several lines around the cut
+  disagree about which side they belong to.
 
 Blank, title and image pages (too little text) are skipped.
 
 ## How well it works
 
-Measured on one real book (353 scanned pages, 2 columns of small-type notes, many pages that
+Measured on one real book (353 scanned pages with footnotes in smaller type, many pages that
 are mostly notes), judged against the exact blank gap between the last body line and the
 first note line:
 
 | Mode | Cut inside the gap | Cut into body text | Cut leaves notes behind |
 |------|--------------------|--------------------|-------------------------|
-| PDF text layer (`--use-text-layer`) | spot-checked by eye on ~40 pages, all correct | — | — |
+| PDF text layer (`--use-text-layer`) | not measured the same way; ~35 of ~40 pages checked by eye were right, the rest were small-type appendix pages (now flagged) | — | — |
 | OCR on 150 dpi images | 250 of 266 pages (94%) | 1 (a table page, flagged) | 15 (6%), a few unflagged |
 
-OCR mode's misses are almost all pages that open with the tail of a footnote carried over from
-the previous page. Those cuts land a few lines too low (note text left on the page, never
-body text removed), but not all of them are flagged — look at each page in FootnoteCrop
-before you crop. About one page in six is flagged for review.
+Most OCR misses land a few lines too low, leaving note text on the page rather than removing
+body text; the two I looked at closely were pages that open with the tail of a footnote
+carried over from the previous page. Not all misses are flagged, so look at each page in
+FootnoteCrop before you crop. About one page in six is flagged for review.
 
 One book is a small sample. Expect to tune the numbers at the top of `autocut.py` for
 a book that is typeset differently.

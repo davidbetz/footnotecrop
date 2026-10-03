@@ -154,30 +154,51 @@ class ParseTests(unittest.TestCase):
         first = page.lines[0]
         self.assertEqual((first.left, first.right, first.top, first.bottom), (100, 290, 300, 326))
 
-    def test_line_size_is_the_line_span_not_the_word_heights(self):
-        # Real OCR: a line of short words has short word boxes, yet the line is full size.
-        # Words: some with ascenders only, some with descenders only, some x-height only.
-        rows = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
-                "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t"]
-        spans = [(300, 316), (296, 316), (300, 321), (296, 321), (300, 313)]  # (top, bottom)
-        for i, (top, bottom) in enumerate(spans):
-            rows.append(f"5\t1\t1\t1\t1\t{i + 1}\t{100 + i * 90}\t{top}\t80\t{bottom - top}\t95\tw")
-        # a second line made only of x-height words
-        for i in range(4):
-            rows.append(f"5\t1\t1\t1\t2\t{i + 1}\t{100 + i * 90}\t340\t80\t12\t95\tw")
-        page = ac.parse_tesseract_tsv("\n".join(rows), "1")
-        full, x_only = page.lines
-        self.assertEqual(full.size, 25)  # 296 .. 321
+    HEADER = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+              "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t"]
 
-    def test_outlier_tall_word_does_not_inflate_the_size(self):
-        rows = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
-                "1\t1\t0\t0\t0\t0\t0\t0\t1000\t1500\t-1\t"]
-        for i in range(5):
-            rows.append(f"5\t1\t1\t1\t1\t{i + 1}\t{100 + i * 90}\t300\t80\t18\t95\tw")
-        rows.append("5\t1\t1\t1\t1\t6\t600\t280\t30\t60\t95\tx")  # merged-in tall blob
-        (line,) = ac.parse_tesseract_tsv("\n".join(rows), "1").lines
-        self.assertEqual(line.size, 18)
-        self.assertEqual(line.top, 280)  # geometry still covers the blob
+    def tsv_lines(self, specs):
+        """specs: list of (baseline, ink_height, [word_heights]) -> TSV with one row per word."""
+        rows = list(self.HEADER)
+        for n, (baseline, _, heights) in enumerate(specs, start=1):
+            for i, h in enumerate(heights):
+                rows.append(f"5\t1\t1\t1\t{n}\t{i + 1}\t{100 + i * 90}\t{baseline - h}\t80\t{h}\t95\tw")
+        return "\n".join(rows)
+
+    def test_size_is_line_spacing_not_ink_height(self):
+        # Body (27px apart) and notes (20px apart). The last body line has no descenders, so its
+        # ink is *shorter* than a note line's - spacing still tells them apart.
+        body = [(300 + 27 * i, 0, [16, 17, 16, 17]) for i in range(5)]      # ink ~16-17px
+        notes = [(500 + 20 * i, 0, [18, 20, 19, 21]) for i in range(5)]     # ink ~18-21px
+        page = ac.parse_tesseract_tsv(self.tsv_lines(body + notes), "1")
+        sizes = [round(l.size) for l in sorted(page.lines, key=lambda l: l.top)]
+        # spacing 2 lines down: body 27; the last body lines see the big gap to the notes
+        self.assertEqual(sizes, [27, 27, 27, 60, 56, 20, 20, 20, 20, 20])
+
+    def test_gap_before_the_notes_does_not_change_the_boundary_sizes(self):
+        specs = [(300 + 27 * i, 0, [17, 17]) for i in range(3)] + [(480 + 20 * i, 0, [17, 17]) for i in range(3)]
+        page = ac.parse_tesseract_tsv(self.tsv_lines(specs), "1")
+        sizes = [round(l.size) for l in sorted(page.lines, key=lambda l: l.top)]
+        self.assertEqual(sizes, [27, 76, 73, 20, 20, 20])
+
+    def test_one_oversized_box_does_not_hide_its_neighbour(self):
+        # first note line box merged with something above it (34px tall); the next note line's
+        # baseline is only 15px below the merged box's median-bottom baseline
+        rows = list(self.HEADER)
+        specs = [(300, 18), (327, 18), (354, 18), (560, 34), (575, 18), (595, 18), (615, 18)]
+        for n, (baseline, height) in enumerate(specs, start=1):
+            rows.append(f"5\t1\t1\t1\t{n}\t1\t100\t{baseline - height}\t600\t{height}\t95\tw")
+        page = ac.parse_tesseract_tsv("\n".join(rows), "1")
+        by_top = sorted(page.lines, key=lambda l: l.top)
+        self.assertAlmostEqual(by_top[3].size, 17.5)  # the oversized box still sees its true neighbours
+
+    def test_a_line_split_in_two_is_not_its_own_neighbour(self):
+        rows = list(self.HEADER)
+        for n, baseline in enumerate([300, 327, 354], start=1):
+            rows.append(f"5\t1\t1\t1\t{n}\t1\t100\t{baseline - 18}\t300\t18\t95\tw")
+        rows.append("5\t1\t2\t1\t1\t1\t700\t309\t30\t18\t95\tw")  # fragment on the middle line's baseline
+        page = ac.parse_tesseract_tsv("\n".join(rows), "1")
+        self.assertEqual({round(l.size) for l in page.lines}, {27})  # the fragment adds no tiny gap
 
     def test_pdf_bbox_is_scaled_to_pixels(self):
         html = (

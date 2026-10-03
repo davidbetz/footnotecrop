@@ -42,6 +42,8 @@ MIN_WIDE_LINES = 3  # fewer than this and the page is treated as blank / title /
 SIZE_BIN_RATIO = 1.04  # line sizes within ~4% are "the same size"
 NARROW_NOTES_FRACTION = 0.35  # footnote lines are wide; a median narrower than this is suspicious
 QUOTE_INDENT_FRACTION = 0.03  # a block indented at least this much (of page width) may be a quote
+MIXED_MIN_LINES = 3  # a page is "mixed" only if at least this many lines disagree with the split
+MIXED_MIN_FRACTION = 0.08  # ... and at least this share of its lines (OCR noise hits a line or two)
 BODY_DEVIATION = 0.08  # page body size this far from the book's body size gets flagged
 
 
@@ -207,7 +209,7 @@ def analyse_page(page, stats):
         reasons.append("text below the cut is not clearly smaller than body text")
     if len(lines) - k >= 4 and statistics.median(l.width for l in lines[k:]) < page.width * NARROW_NOTES_FRACTION:
         reasons.append("text below the cut is narrow (a list or table, not footnotes?)")
-    if misclassified >= 2:
+    if misclassified >= max(MIXED_MIN_LINES, math.ceil(MIXED_MIN_FRACTION * len(lines))):
         reasons.append("mixed text sizes around the cut")
     status = "review" if reasons else "cut"
     return Result(page.name, status, cut=cut, height=page.height, reason="; ".join(reasons))
@@ -219,6 +221,52 @@ def analyse_book(pages):
 
 
 # --------------------------------------------------------------------- line providers
+
+
+def assign_line_pitch(lines, baselines):
+    """Set each line's ``size`` to its line spacing: distance from its baseline to the baseline
+    two lines further down, divided by two (one line down, or one up, near the end of the page).
+
+    Measuring the ink (height of the letters) does not work: a body line with no
+    descenders ("of the doctrinal section") is no taller than a footnote line that has
+    some. Line spacing does not depend on which letters a line happens to contain, and
+    footnotes are always set tighter than body text.
+
+    Details that matter, all found on a real scan:
+    * Look *down*, never at the smaller of the gaps above and below. Baselines jitter by a few
+      pixels and a minimum turns that into a bias towards "tight". Looking down also puts the
+      boundary where it belongs: the last body line has the big gap above the notes below it.
+    * Average over two lines to halve the jitter.
+    * Lines sharing a baseline (Tesseract sometimes splits one line in two) count as one, judged
+      against the page's typical line height, not the line's own (a merged box can be oversized).
+    """
+    if not lines:
+        return
+    min_gap = 0.6 * statistics.median(l.bottom - l.top for l in lines)
+    order = sorted(range(len(lines)), key=lambda i: baselines[i])
+
+    def distinct(pos, step, count):
+        """Baselines of the next ``count`` distinct lines from ``pos`` in direction ``step``."""
+        found, last = [], baselines[order[pos]]
+        j = pos + step
+        while 0 <= j < len(order) and len(found) < count:
+            b = baselines[order[j]]
+            if abs(b - last) >= min_gap:
+                found.append(b)
+                last = b
+            j += step
+        return found
+
+    for pos, i in enumerate(order):
+        base = baselines[i]
+        below = distinct(pos, 1, 2)
+        if len(below) == 2:
+            lines[i].size = (below[1] - base) / 2
+        elif below:
+            lines[i].size = below[0] - base
+        else:
+            above = distinct(pos, -1, 1)
+            lines[i].size = base - above[0] if above else 0.0
 
 
 def parse_tesseract_tsv(tsv, name):
@@ -241,22 +289,20 @@ def parse_tesseract_tsv(tsv, name):
         elif level == 5 and text and conf >= 40 and h > 3:
             words.setdefault((block, par, line), []).append((left, top, left + w, top + h, h))
 
-    lines = []
+    lines, baselines = [], []
     for ws in words.values():
-        # Size = ascender-to-descender span of the line. Word heights alone are far too
-        # noisy (a line of short words has no tall letters), but the span is stable. Words much
-        # taller than typical (merged lines, odd marks) are left out of the size only.
-        typical = statistics.median(w[4] for w in ws)
-        kept = [w for w in ws if w[4] <= 1.5 * typical]
         lines.append(
             Line(
                 top=min(w[1] for w in ws),
                 bottom=max(w[3] for w in ws),
                 left=min(w[0] for w in ws),
                 right=max(w[2] for w in ws),
-                size=max(w[3] for w in kept) - min(w[1] for w in kept),
+                size=0.0,
             )
         )
+        # Most words have no descender, so the median word bottom is the baseline.
+        baselines.append(statistics.median(w[3] for w in ws))
+    assign_line_pitch(lines, baselines)
     return Page(name, width, height, lines)
 
 

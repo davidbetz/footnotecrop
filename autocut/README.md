@@ -61,6 +61,25 @@ before cropping:
 
 Blank, title and image pages (too little text) are skipped.
 
+## How well it works
+
+Measured on one real book (353 scanned pages, 2 columns of small-type notes, many pages that
+are mostly notes), judged against the exact blank gap between the last body line and the
+first note line:
+
+| Mode | Cut inside the gap | Cut into body text | Cut leaves notes behind |
+|------|--------------------|--------------------|-------------------------|
+| PDF text layer (`--use-text-layer`) | spot-checked by eye on ~40 pages, all correct | — | — |
+| OCR on 150 dpi images | 250 of 266 pages (94%) | 1 (a table page, flagged) | 15 (6%), a few unflagged |
+
+OCR mode's misses are almost all pages that open with the tail of a footnote carried over from
+the previous page. Those cuts land a few lines too low (note text left on the page, never
+body text removed), but not all of them are flagged — look at each page in FootnoteCrop
+before you crop. About one page in six is flagged for review.
+
+One book is a small sample. Expect to tune the numbers at the top of `autocut.py` for
+a book that is typeset differently.
+
 ## Limits
 
 * It judges by type size and layout. A book whose notes are the same size as the body
